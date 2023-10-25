@@ -33,7 +33,7 @@
           id: meta
           uses: docker/metadata-action@v4.4.0
           with:
-            images: serbenyuk/volunteer
+            images: serbenyuk/new
             labels: |
               org.opencontainers.image.revision=${{ env.SHA }}
             tags: |
@@ -53,15 +53,17 @@
             labels: ${{ steps.meta.outputs.labels }}
             cache-from: type=gha
             cache-to: type=gha,mode=max
+            build-args: |-
+              PLATFORM=${{ matrix.platform }}
 
-    #     ## Write for matrix outputs workaround 
-    #     - uses: cloudposse/github-action-matrix-outputs-write@0.3.1
-    #       id: out
-    #       with:
-    #         matrix-step-name: ${{ github.job }}
-    #         matrix-key: ${{ matrix.platform }}
-    #         outputs: |-
-    #           image: ${{ steps.build.outputs.image }}:${{ steps.build.outputs.tag }}
+        ## Write for matrix outputs workaround 
+        - uses: cloudposse/github-action-matrix-outputs-write@0.3.1
+          id: out
+          with:
+            matrix-step-name: ${{ github.job }}
+            matrix-key: ${{ matrix.platform }}
+            outputs: |-
+              image: ${{ steps.build.outputs.image }}:${{ steps.build.outputs.tag }}
 
     # ## Read matrix outputs 
     # read:
