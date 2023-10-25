@@ -58,44 +58,25 @@
             labels: ${{ steps.meta.outputs.labels }}
             cache-from: type=gha
             cache-to: type=gha,mode=max
-            build-args: |
-              PLATFORM=${{ matrix.platform }}
 
-        ## Write for matrix outputs workaround 
-        - uses: cloudposse/github-action-matrix-outputs-write@0.3.1
-          id: out
-          with:
-            matrix-step-name: ${{ github.job }}
-            matrix-key: ${{ matrix.platform }}
-            outputs: |
-              image: ${{ steps.build.outputs.image }}:${{ steps.build.outputs.tag }}
+    display_matrix_outputs:
+      name: Display Matrix Outputs
+      needs: build
+      runs-on: ubuntu-latest
 
-    # ## Read matrix outputs 
-    # read:
-    #   runs-on: ubuntu-latest
-    #   needs: [build]
-    #   steps:
-    #     - uses: cloudposse/github-action-matrix-outputs-read@main
-    #       id: read
-    #       with:
-    #         matrix-step-name: build
+      steps:
+        - name: Check Out Code
+          uses: actions/checkout@v2
 
-    #   outputs:
-    #     result: "${{ steps.read.outputs.result }}"
+        - name: Initialize Outputs List
+          id: outputs_list
+          run: echo "::set-output name=outputs::"
 
-    ## This how you can reference matrix output
-    # assert:
-    #   runs-on: ubuntu-latest
-    #   needs: [read]
-    #   steps:
-    #     - uses: nick-fields/assert-action@v1
-    #       with:
-    #         expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:i386
-    #         ## This how you can reference matrix output
-    #         actual: ${{ fromJson(needs.read.outputs.result).image.i386 }}
+        - name: Append Outputs to List
+          run: |
+            outputs_list="${outputs_list} ${{ needs.build.outputs.tag }} "
 
-    #     - uses: nick-fields/assert-action@v1
-    #       with:
-    #         expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:arm64v8
-    #         ## This how you can reference matrix output
-    #         actual: ${{ fromJson(needs.read.outputs.result).image.arm64v8 }}
+        - name: Display All Outputs
+          run: |
+            echo "All Outputs:"
+            echo "${{ steps.outputs_list.outputs.outputs }}"
