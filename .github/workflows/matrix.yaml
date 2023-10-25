@@ -19,7 +19,6 @@
           with:
             registry: registry.hub.docker.com
             file: Dockerfile
-            organization: serbenyuk
             repository: serbenyuk/new
             login: serbenyuk
             password: "${{ secrets.DOCKERHUB_PASSWORD }}"
