@@ -1,83 +1,88 @@
-  name: matrix
-  on:
-    pull_request:
-      branches: [ 'main' ]
-      types: [opened, synchronize, reopened, closed, labeled, unlabeled]
+name: ci
 
-  jobs:
-    build:
-      runs-on: ubuntu-latest
-      strategy:
-        matrix:
-          platform:
-            - i386 
-            - arm64v8
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v3
-        - name: Set up QEMU
-          uses: docker/setup-qemu-action@v2  
+on:
+  pull_request:
+    branches: [ 'main' ]
 
-        - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v2
+env:
+  REGISTRY_IMAGE: serbenyuk/new
 
-        - name: Generate Tag Output
-          id: tag_output
-          run: echo "::set-output name=tag::${{ matrix.platform }}"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm/v6
+          - linux/arm/v7
+          - linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: serbenyuk
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"          
+      - name: Upload digest
+        uses: actions/upload-artifact@v3
+        with:
+          name: digests
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
-        # Login against a Docker registry except on PR
-        # https://github.com/docker/login-action
-        - name: Log into
-          uses: docker/login-action@v2
-          with:
-            username: serbenyuk
-            password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-        # Extract metadata (tags, labels) for Docker
-        # https://github.com/docker/metadata-action
-        - name: Extract Docker metadata
-          id: meta
-          uses: docker/metadata-action@v4.4.0
-          with:
-            images: serbenyuk/new
-            labels: |
-              org.opencontainers.image.revision=${{ env.SHA }}
-            tags: |
-              type=edge,branch=$repo.default_branch
-              type=semver,pattern=v{{version}}
-              type=sha,prefix=,suffix=,format=short
-        
-        # Build and push Docker image with Buildx (don't push on PR)
-        # https://github.com/docker/build-push-action
-        - name: Build and push Docker image
-          id: build
-          uses: docker/build-push-action@v4.0.0
-          with:
-            context: .
-            push: true
-            tags: ${{ steps.meta.outputs.tags }}
-            labels: ${{ steps.meta.outputs.labels }}
-            cache-from: type=gha
-            cache-to: type=gha,mode=max
-
-    display_matrix_outputs:
-      name: Display Matrix Outputs
-      needs: build
-      runs-on: ubuntu-latest
-
-      steps:
-        - name: Check Out Code
-          uses: actions/checkout@v2
-
-        - name: Initialize Outputs List
-          id: outputs_list
-          run: echo "::set-output name=outputs::"
-
-        - name: Append Outputs to List
-          run: |
-            outputs_list="${outputs_list} ${{ needs.build.outputs.tag }} "
-
-        - name: Display All Outputs
-          run: |
-            echo "All Outputs:"
-            echo "${{ steps.outputs_list.outputs.outputs }}"
+  merge:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v3
+        with:
+          name: digests
+          path: /tmp/digests
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)          
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}          
