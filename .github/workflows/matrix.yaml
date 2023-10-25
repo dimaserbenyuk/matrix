@@ -18,7 +18,7 @@
           uses: cloudposse/github-action-docker-build-push@1.9.0
           with:
             registry: registry.hub.docker.com
-            file: .
+            file: Dockerfile
             organization: serbenyuk
             repository: serbenyuk/new
             login: serbenyuk
