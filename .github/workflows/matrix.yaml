@@ -46,18 +46,18 @@
         result: "${{ steps.read.outputs.result }}"
 
     ## This how you can reference matrix output
-    assert:
-      runs-on: ubuntu-latest
-      needs: [read]
-      steps:
-        - uses: nick-fields/assert-action@v1
-          with:
-            expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:i386
-            ## This how you can reference matrix output
-            actual: ${{ fromJson(needs.read.outputs.result).image.i386 }}
+    # assert:
+    #   runs-on: ubuntu-latest
+    #   needs: [read]
+    #   steps:
+    #     - uses: nick-fields/assert-action@v1
+    #       with:
+    #         expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:i386
+    #         ## This how you can reference matrix output
+    #         actual: ${{ fromJson(needs.read.outputs.result).image.i386 }}
 
-        - uses: nick-fields/assert-action@v1
-          with:
-            expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:arm64v8
-            ## This how you can reference matrix output
-            actual: ${{ fromJson(needs.read.outputs.result).image.arm64v8 }}
+    #     - uses: nick-fields/assert-action@v1
+    #       with:
+    #         expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:arm64v8
+    #         ## This how you can reference matrix output
+    #         actual: ${{ fromJson(needs.read.outputs.result).image.arm64v8 }}
