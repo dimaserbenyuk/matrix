@@ -19,6 +19,7 @@
           with:
             registry: registry.hub.docker.com
             file: Dockerfile
+            organization: "${{ github.event.repository.owner.login }}"
             repository: serbenyuk/new
             login: serbenyuk
             password: "${{ secrets.DOCKERHUB_PASSWORD }}"
