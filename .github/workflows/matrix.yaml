@@ -18,8 +18,8 @@
           uses: cloudposse/github-action-docker-build-push@1.9.0
           with:
             registry: registry.hub.docker.com
-            organization: "${{ github.event.repository.owner.login }}"
-            repository: "${{ github.event.repository.name }}"
+            organization: serbenyuk
+            repository: serbenyuk/new
             build-args: |-
               PLATFORM=${{ matrix.platform }}
 
