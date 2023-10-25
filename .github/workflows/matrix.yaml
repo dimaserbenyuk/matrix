@@ -53,7 +53,7 @@
             labels: ${{ steps.meta.outputs.labels }}
             cache-from: type=gha
             cache-to: type=gha,mode=max
-            build-args: |-
+            build-args: |
               PLATFORM=${{ matrix.platform }}
 
         ## Write for matrix outputs workaround 
@@ -62,7 +62,7 @@
           with:
             matrix-step-name: ${{ github.job }}
             matrix-key: ${{ matrix.platform }}
-            outputs: |-
+            outputs: |
               image: ${{ steps.build.outputs.image }}:${{ steps.build.outputs.tag }}
 
     # ## Read matrix outputs 
