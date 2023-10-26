@@ -1,64 +1,223 @@
-  name: matrix
-  on:
-    pull_request:
-      branches: [ 'main' ]
-      types: [opened, synchronize, reopened, closed, labeled, unlabeled]
+# name: ci
 
-  jobs:
-    build:
-      runs-on: ubuntu-latest
-      strategy:
-        matrix:
-          platform: ["i386", "arm64v8"]
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v3
+# on:
+#   pull_request:
+#     branches: [ 'main' ]
 
-        - name: Build
-          id: build
-          uses: cloudposse/github-action-docker-build-push@1.9.0
-          with:
-            registry: registry.hub.docker.com
-            organization: "${{ github.event.repository.owner.login }}"
-            repository: "${{ github.event.repository.name }}"
-            build-args: |-
-              PLATFORM=${{ matrix.platform }}
+# env:
+#   REGISTRY_IMAGE: serbenyuk/new
 
-        ## Write for matrix outputs workaround 
-        - uses: cloudposse/github-action-matrix-outputs-write@0.3.1
-          id: out
-          with:
-            matrix-step-name: ${{ github.job }}
-            matrix-key: ${{ matrix.platform }}
-            outputs: |-
-              image: ${{ steps.build.outputs.image }}:${{ steps.build.outputs.tag }}
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         platform:
+#           - linux/amd64
+#           - linux/arm/v6
+#           - linux/arm/v7
+#           - linux/arm64
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
+#       - name: Docker meta
+#         id: meta
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: ${{ env.REGISTRY_IMAGE }}
+#       - name: Set up QEMU
+#         uses: docker/setup-qemu-action@v3
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+#       - name: Login to Docker Hub
+#         uses: docker/login-action@v3
+#         with:
+#           username: serbenyuk
+#           password: ${{ secrets.DOCKERHUB_PASSWORD }}
+#       - name: Build and push by digest
+#         id: build
+#         uses: docker/build-push-action@v5
+#         with:
+#           context: .
+#           platforms: ${{ matrix.platform }}
+#           labels: ${{ steps.meta.outputs.labels }}
+#           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+#       - name: Export digest
+#         run: |
+#           mkdir -p /tmp/digests
+#           digest="${{ steps.build.outputs.digest }}"
+#           touch "/tmp/digests/${digest#sha256:}"          
+#       - name: Upload digest
+#         uses: actions/upload-artifact@v3
+#         with:
+#           name: digests
+#           path: /tmp/digests/*
+#           if-no-files-found: error
+#           retention-days: 1
 
-    ## Read matrix outputs 
-    read:
-      runs-on: ubuntu-latest
-      needs: [build]
-      steps:
-        - uses: cloudposse/github-action-matrix-outputs-read@main
-          id: read
-          with:
-            matrix-step-name: build
+#   merge:
+#     runs-on: ubuntu-latest
+#     needs:
+#       - build
+#     steps:
+#       - name: Download digests
+#         uses: actions/download-artifact@v3
+#         with:
+#           name: digests
+#           path: /tmp/digests
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+#       - name: Docker meta
+#         id: meta
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: ${{ env.REGISTRY_IMAGE }}
+#       - name: Login to Docker Hub
+#         uses: docker/login-action@v3
+#         with:
+#           username: serbenyuk
+#           password: ${{ secrets.DOCKERHUB_PASSWORD }}
+#       - name: Create manifest list and push
+#         working-directory: /tmp/digests
+#         run: |
+#           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+#             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)          
+#       - name: Inspect image
+#         run: |
+#           docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}          
 
-      outputs:
-        result: "${{ steps.read.outputs.result }}"
+name: ci
 
-    ## This how you can reference matrix output
-    assert:
-      runs-on: ubuntu-latest
-      needs: [read]
-      steps:
-        - uses: nick-fields/assert-action@v1
-          with:
-            expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:i386
-            ## This how you can reference matrix output
-            actual: ${{ fromJson(needs.read.outputs.result).image.i386 }}
+on:
+  pull_request:
+    branches: [ 'main' ]
 
-        - uses: nick-fields/assert-action@v1
-          with:
-            expected: ${{ registry.hub.docker.com }}/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}:arm64v8
-            ## This how you can reference matrix output
-            actual: ${{ fromJson(needs.read.outputs.result).image.arm64v8 }}
+env:
+  REGISTRY_IMAGE: serbenyuk/new
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Create matrix
+        id: platforms
+        run: |
+          echo "matrix=$(docker buildx bake image-all --print | jq -cr '.target."image-all".platforms')" >>${GITHUB_OUTPUT}          
+      -
+        name: Show matrix
+        run: |
+          echo ${{ steps.platforms.outputs.matrix }}          
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+      -
+        name: Rename meta bake definition file
+        run: |
+          mv "${{ steps.meta.outputs.bake-file }}" "/tmp/bake-meta.json"          
+      -
+        name: Upload meta bake definition
+        uses: actions/upload-artifact@v3
+        with:
+          name: bake-meta
+          path: /tmp/bake-meta.json
+          if-no-files-found: error
+          retention-days: 1
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: serbenyuk
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      -
+        name: Build
+        id: bake
+        uses: docker/bake-action@v4
+        with:
+          files: |
+            ./docker-bake.hcl
+            /tmp/bake-meta.json            
+          targets: image
+          set: |
+            *.tags=
+            *.platform=${{ matrix.platform }}
+            *.output=type=image,"name=${{ env.REGISTRY_IMAGE }}",push-by-digest=true,name-canonical=true,push=true            
+      -
+        name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ fromJSON(steps.bake.outputs.metadata).image['containerimage.digest'] }}"
+          touch "/tmp/digests/${digest#sha256:}"          
+      -
+        name: Upload digest
+        uses: actions/upload-artifact@v3
+        with:
+          name: digests
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      -
+        name: Download meta bake definition
+        uses: actions/download-artifact@v3
+        with:
+          name: bake-meta
+          path: /tmp
+      -
+        name: Download digests
+        uses: actions/download-artifact@v3
+        with:
+          name: digests
+          path: /tmp/digests
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: serbenyuk
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      -
+        name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.target."docker-metadata-action".tags | map(select(startswith("${{ env.REGISTRY_IMAGE }}")) | "-t " + .) | join(" ")' /tmp/bake-meta.json) \
+            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)          
+      -
+        name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:$(jq -r '.target."docker-metadata-action".args.DOCKER_META_VERSION' /tmp/bake-meta.json)          
